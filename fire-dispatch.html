@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fire Dispatch System</title>
+<style>
+  /* ---------- CSS: basic styling only ---------- */
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; margin: 0; background: #f4f4f4; color: #222; }
+  header { background: #c62828; color: #fff; padding: 14px 20px; }
+  header h1 { margin: 0; font-size: 22px; }
+  .container { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px; }
+  .card { background: #fff; padding: 16px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+  .full { grid-column: 1 / -1; }
+  h2 { margin-top: 0; font-size: 18px; border-bottom: 2px solid #c62828; padding-bottom: 6px; }
+  label { display: block; margin-top: 10px; font-weight: bold; font-size: 14px; }
+  input, select { width: 100%; padding: 8px; margin-top: 4px; }
+  button { background: #c62828; color: #fff; border: 0; padding: 10px 16px; margin-top: 14px; border-radius: 4px; cursor: pointer; }
+  button.small { padding: 4px 10px; margin: 0; font-size: 12px; background: #2e7d32; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
+  th { background: #eee; }
+  .Available { color: #2e7d32; font-weight: bold; }
+  .Dispatched { color: #c62828; font-weight: bold; }
+  .Waiting { color: #ef6c00; font-weight: bold; }
+  .Resolved { color: #555; font-weight: bold; }
+  @media (max-width: 800px) { .container { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<header><h1>🚒 Fire Response Dispatch System (Simulation)</h1></header>
+
+<div class="container">
+
+  <!-- 1. Incident intake form -->
+  <div class="card">
+    <h2>1. New Incident</h2>
+    <label>Incident Type</label>
+    <select id="type">
+      <option>Fire</option>
+      <option>Medical</option>
+      <option>Rescue</option>
+    </select>
+
+    <label>Location</label>
+    <input id="location" placeholder="e.g. Sector 17, Chandigarh">
+
+    <label>Severity</label>
+    <select id="severity">
+      <option>Low</option>
+      <option>Medium</option>
+      <option>High</option>
+    </select>
+
+    <button onclick="addIncident()">Report &amp; Dispatch</button>
+    <p id="msg" style="color:#c62828"></p>
+  </div>
+
+  <!-- 2. Vehicle availability -->
+  <div class="card">
+    <h2>2. Vehicles &amp; Crew</h2>
+    <table>
+      <thead><tr><th>ID</th><th>Type</th><th>Crew</th><th>Status</th></tr></thead>
+      <tbody id="vehicleTable"></tbody>
+    </table>
+  </div>
+
+  <!-- 3. Active incidents (dispatch status) -->
+  <div class="card full">
+    <h2>3. Active Incidents (Dispatch Status)</h2>
+    <table>
+      <thead><tr><th>#</th><th>Type</th><th>Location</th><th>Severity</th><th>Vehicles Assigned</th><th>Crew</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody id="activeTable"></tbody>
+    </table>
+  </div>
+
+  <!-- 4. History -->
+  <div class="card full">
+    <h2>4. Incident History</h2>
+    <table>
+      <thead><tr><th>#</th><th>Time</th><th>Type</th><th>Location</th><th>Severity</th><th>Vehicles Used</th><th>Status</th></tr></thead>
+      <tbody id="historyTable"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+  /* ---------- JavaScript: all the logic is here ---------- */
+
+  // Vehicle data (each vehicle has a crew too)
+  const vehicles = [
+    { id: "FE-1", type: "Fire Engine", crew: 4, status: "Available" },
+    { id: "FE-2", type: "Fire Engine", crew: 4, status: "Available" },
+    { id: "FE-3", type: "Fire Engine", crew: 4, status: "Available" },
+    { id: "AM-1", type: "Ambulance",   crew: 2, status: "Available" },
+    { id: "AM-2", type: "Ambulance",   crew: 2, status: "Available" },
+    { id: "RV-1", type: "Rescue Van",  crew: 3, status: "Available" }
+  ];
+
+  const incidents = [];   // all incidents are stored in this array
+  let nextId = 1;
+
+  // Number of vehicles needed based on severity
+  const needed = { Low: 1, Medium: 2, High: 3 };
+
+  // Best vehicle type for each incident type
+  const preferred = { Fire: "Fire Engine", Medical: "Ambulance", Rescue: "Rescue Van" };
+
+  // Add a new incident
+  function addIncident() {
+    const type = document.getElementById("type").value;
+    const location = document.getElementById("location").value.trim();
+    const severity = document.getElementById("severity").value;
+
+    if (location === "") {
+      document.getElementById("msg").innerText = "Please enter a location!";
+      return;
+    }
+    document.getElementById("msg").innerText = "";
+
+    const inc = {
+      id: nextId++,
+      time: new Date().toLocaleTimeString(),
+      type, location, severity,
+      vehicles: [],
+      status: "Waiting"
+    };
+    incidents.push(inc);
+
+    tryDispatch(inc);
+    document.getElementById("location").value = "";
+    render();
+  }
+
+  // Try to assign vehicles
+  function tryDispatch(inc) {
+    const free = vehicles.filter(v => v.status === "Available");
+
+    // vehicles matching the incident type come first
+    free.sort((a, b) =>
+      (b.type === preferred[inc.type]) - (a.type === preferred[inc.type])
+    );
+
+    if (free.length < needed[inc.severity]) {
+      inc.status = "Waiting";   // not enough vehicles, so the incident waits
+      return;
+    }
+
+    const chosen = free.slice(0, needed[inc.severity]);
+    chosen.forEach(v => v.status = "Dispatched");
+    inc.vehicles = chosen;
+    inc.status = "Dispatched";
+  }
+
+  // Resolve incident -> vehicles become free again
+  function resolveIncident(id) {
+    const inc = incidents.find(i => i.id === id);
+    inc.vehicles.forEach(v => v.status = "Available");
+    inc.status = "Resolved";
+
+    // now dispatch the waiting incidents (High severity first)
+    const order = { High: 0, Medium: 1, Low: 2 };
+    incidents
+      .filter(i => i.status === "Waiting")
+      .sort((a, b) => order[a.severity] - order[b.severity])
+      .forEach(tryDispatch);
+
+    render();
+  }
+
+  // Show the tables on screen
+  function render() {
+    // Vehicles table
+    document.getElementById("vehicleTable").innerHTML = vehicles.map(v =>
+      `<tr><td>${v.id}</td><td>${v.type}</td><td>${v.crew}</td><td class="${v.status}">${v.status}</td></tr>`
+    ).join("");
+
+    // Active incidents (excluding Resolved ones)
+    const active = incidents.filter(i => i.status !== "Resolved");
+    document.getElementById("activeTable").innerHTML = active.length === 0
+      ? `<tr><td colspan="8">No active incidents.</td></tr>`
+      : active.map(i => {
+          const ids = i.vehicles.map(v => v.id).join(", ") || "-";
+          const crew = i.vehicles.reduce((sum, v) => sum + v.crew, 0);
+          return `<tr>
+            <td>${i.id}</td><td>${i.type}</td><td>${i.location}</td><td>${i.severity}</td>
+            <td>${ids}</td><td>${crew}</td><td class="${i.status}">${i.status}</td>
+            <td>${i.status === "Dispatched" ? `<button class="small" onclick="resolveIncident(${i.id})">Resolve</button>` : "-"}</td>
+          </tr>`;
+        }).join("");
+
+    // History (all incidents)
+    document.getElementById("historyTable").innerHTML = incidents.length === 0
+      ? `<tr><td colspan="7">No history yet.</td></tr>`
+      : [...incidents].reverse().map(i =>
+          `<tr><td>${i.id}</td><td>${i.time}</td><td>${i.type}</td><td>${i.location}</td>
+           <td>${i.severity}</td><td>${i.vehicles.map(v => v.id).join(", ") || "-"}</td>
+           <td class="${i.status}">${i.status}</td></tr>`
+        ).join("");
+  }
+
+  render();   // run once when the page loads
+</script>
+</body>
+</html>
